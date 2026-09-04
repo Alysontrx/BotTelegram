@@ -6,6 +6,8 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+import threading
+from flask import Flask
 
 # Carrega as variáveis de ambiente
 load_dotenv()
@@ -173,6 +175,18 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"Erro (Gerar Imagem): {e}")
         await thinking_message.edit_text(f"Desculpe, falha na conexão com Hugging Face. {e}")
 
+# --- FLUXO WEB (Para manter o Render Free ativo) ---
+app_flask = Flask(__name__)
+
+@app_flask.route('/')
+def home():
+    return "Bot is running online!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    app_flask.run(host="0.0.0.0", port=port)
+# ---------------------------------------------------
+
 def main():
     if not TELEGRAM_TOKEN or not GEMINI_API_KEY or not MONGODB_URI:
         print("Erro: Tokens ausentes no .env!")
@@ -185,6 +199,9 @@ def main():
     except Exception as e:
         print(f"Erro ao conectar no MongoDB Atlas: {e}")
         return
+
+    # Inicia o servidor web em segundo plano para o Render não matar o bot
+    threading.Thread(target=run_flask, daemon=True).start()
 
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
