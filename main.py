@@ -203,6 +203,11 @@ def main():
     # Inicia o servidor web em segundo plano para o Render não matar o bot
     threading.Thread(target=run_flask, daemon=True).start()
 
+    import asyncio
+    # Força a criação de um loop de eventos para o Telegram não dar crash de thread no Render
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
