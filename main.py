@@ -4,7 +4,7 @@ import pymongo
 import certifi
 import google.generativeai as genai
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import threading
 from flask import Flask
@@ -187,6 +187,14 @@ def run_flask():
     app_flask.run(host="0.0.0.0", port=port)
 # ---------------------------------------------------
 
+async def setup_commands(application):
+    """Configura o menu azul do Telegram automaticamente"""
+    await application.bot.set_my_commands([
+        BotCommand("start", "Reiniciar o robô"),
+        BotCommand("gerar", "Gerar uma imagem com IA"),
+        BotCommand("esquecer", "Apagar memória e contexto")
+    ])
+
 def main():
     if not TELEGRAM_TOKEN or not GEMINI_API_KEY or not MONGODB_URI:
         print("Erro: Tokens ausentes no .env!")
@@ -208,7 +216,7 @@ def main():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(setup_commands).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("gerar", generate_image))
