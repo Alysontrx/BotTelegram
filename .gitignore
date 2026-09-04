@@ -1,0 +1,18 @@
+# Variáveis de Ambiente e Senhas (NUNCA ENVIAR PARA O GITHUB)
+.env
+
+# Pastas de Ambiente Virtual
+venv/
+env/
+__pycache__/
+
+# Arquivos temporários e mídias
+temp_audio.ogg
+temp_photo.jpg
+*.mp3
+*.ogg
+*.jpg
+*.png
+
+# Arquivos locais (O banco de dados do Atlas já está na nuvem!)
+bot_memory.db
