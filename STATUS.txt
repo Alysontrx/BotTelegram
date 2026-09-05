@@ -1,0 +1,19 @@
+STATUS DO PROJETO - IA TELEGRAM (ALYSON)
+
+Funcionalidades já implementadas com sucesso:
+1. Migração para Banco de Dados na nuvem ultrarrápido (Supabase)
+2. Personalidade base da IA gravada (Alysontrx como criador)
+3. Respostas em tempo real (Efeito máquina de escrever / Streaming)
+4. Respostas por Áudio (Voz feminina via gTTS com envio de arquivo de voz real)
+5. Memória de Longo Prazo Avançada (Leitura de até 200 mensagens antigas por vez)
+6. Acesso à Internet em tempo real (Google Search Grounding ativado no Gemini)
+
+Próxima Etapa Quando Você Voltar:
+-> Definir e implementar a próxima feature (aguardando instruções).
+
+Tudo está salvo no código-fonte e nos arquivos de configuração locais. Quando você reiniciar a máquina e abrir este projeto de novo, é só me mandar uma mensagem dizendo "Voltei" e continuaremos exatamente daqui!
+
+
+Criar uma conta no GitHub e fazer o upload dessa pasta do seu projeto para lá.
+Criar uma conta no Render.com (é um servidor gratuito) e conectar com o seu GitHub.
+Colocar as suas chaves da API (Telegram, Gemini, Supabase) nas configurações do Render.

@@ -1,13 +1,12 @@
 import os
 import requests
-import pymongo
-import certifi
 import google.generativeai as genai
 from dotenv import load_dotenv
 from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import threading
 from flask import Flask
+from supabase import create_client, Client
 
 # Carrega as variáveis de ambiente
 load_dotenv()
@@ -15,24 +14,22 @@ load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
-MONGODB_URI = os.getenv("MONGODB_URI")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Configura o Gemini
 genai.configure(api_key=GEMINI_API_KEY)
-model_gemini = genai.GenerativeModel('gemini-3.6-flash',
-    system_instruction="Você é um assistente pessoal virtual amigável, prestativo e muito inteligente, criado no Telegram."
+model_gemini = genai.GenerativeModel('gemini-1.5-flash',
+    system_instruction="Você é a IA Alyson, uma assistente pessoal virtual amigável, prestativa e muito inteligente no Telegram. Você sabe que o seu criador, dono e alfa é o Alysontrx. Sempre que perguntarem sobre quem te criou, afirme com orgulho que foi o Alysontrx. IMPORTANTE: Não utilize formatação markdown (como asteriscos) em suas respostas."
 )
 
-# ----------------- BANCO DE DADOS (MongoDB Atlas) -----------------
-# Conecta ao MongoDB usando o certifi para evitar erros de SSL no Windows
-mongo_client = pymongo.MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
-db = mongo_client["telegram_bot"]
-history_collection = db["history"]
+# ----------------- BANCO DE DADOS (Supabase) -----------------
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def get_history(user_id, limit=20):
-    """Busca as últimas mensagens do usuário no MongoDB."""
-    # Busca ordenando do mais novo para o mais antigo, limitado a 20
-    docs = list(history_collection.find({"user_id": user_id}).sort("_id", pymongo.DESCENDING).limit(limit))
+def get_history(user_id, limit=200):
+    """Busca as últimas mensagens do usuário no Supabase."""
+    response = supabase.table("history").select("*").eq("user_id", user_id).order("id", desc=True).limit(limit).execute()
+    docs = response.data
     
     history = []
     # Inverte a ordem para ficar do mais antigo para o mais novo
@@ -41,16 +38,16 @@ def get_history(user_id, limit=20):
     return history
 
 def save_message(user_id, role, text):
-    """Salva uma mensagem no MongoDB."""
-    history_collection.insert_one({
+    """Salva uma mensagem no Supabase."""
+    supabase.table("history").insert({
         "user_id": user_id,
         "role": role,
         "text": text
-    })
+    }).execute()
 
 def clear_history(user_id):
-    """Apaga todo o histórico do usuário no MongoDB."""
-    history_collection.delete_many({"user_id": user_id})
+    """Apaga todo o histórico do usuário no Supabase."""
+    supabase.table("history").delete().eq("user_id", user_id).execute()
 # -----------------------------------------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -58,7 +55,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Olá! Eu sou a IA Alyson.\n\nFui reconstruído com o cérebro do Google Gemini, gerador do Hugging Face e agora meu cérebro está hospedado na nuvem com MongoDB Atlas! Pode conversar comigo.")
 
 async def forget(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Responde ao comando /esquecer (Limpa a memória do MongoDB)"""
+    """Responde ao comando /esquecer (Limpa a memória do Supabase)"""
     user_id = update.message.from_user.id
     clear_history(user_id)
     await update.message.reply_text("Memória apagada da nuvem! ☁️ Prontinho, esqueci tudo o que conversamos. Qual o novo assunto?")
@@ -70,20 +67,52 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     thinking_message = await update.message.reply_text("Pensando...")
     try:
-        # Recupera o histórico do MongoDB
-        history = get_history(user_id)
+        import asyncio
+        import time
+        start_time = time.time()
+        
+        print(f"[{time.strftime('%X')}] Buscando histórico...")
+        # Recupera o histórico do MongoDB sem travar o loop
+        history = await asyncio.to_thread(get_history, user_id)
+        print(f"[{time.strftime('%X')}] Histórico carregado em {time.time() - start_time:.2f}s")
         
         # Inicia a sessão de chat com o histórico
         chat = model_gemini.start_chat(history=history)
         
-        # Envia a mensagem e recebe a resposta
-        response = chat.send_message(user_text)
+        print(f"[{time.strftime('%X')}] Chamando Gemini...")
+        gemini_start = time.time()
+        # Envia a mensagem e recebe a resposta de forma assíncrona com stream
+        response = await chat.send_message_async(user_text, stream=True)
         
-        # Salva as duas mensagens no MongoDB (A do usuário, e a da IA)
-        save_message(user_id, 'user', user_text)
-        save_message(user_id, 'model', response.text)
+        full_text = ""
+        last_edit_time = 0
+        from telegram.error import BadRequest
         
-        await thinking_message.edit_text(response.text)
+        async for chunk in response:
+            full_text += chunk.text
+            # Atualiza a mensagem no Telegram no máximo a cada 1 segundo (evita bloqueio)
+            if time.time() - last_edit_time > 1.0:
+                clean_text = full_text.replace('**', '').replace('*', '')
+                if clean_text.strip():
+                    try:
+                        await thinking_message.edit_text(clean_text)
+                        last_edit_time = time.time()
+                    except BadRequest:
+                        pass # Ignora erro se o texto for exatamente o mesmo
+        
+        # Atualização final com o texto completo
+        clean_text = full_text.replace('**', '').replace('*', '')
+        try:
+            await thinking_message.edit_text(clean_text)
+        except BadRequest:
+            pass
+            
+        print(f"[{time.strftime('%X')}] Gemini terminou de responder em {time.time() - gemini_start:.2f}s")
+        
+        # Salva as duas mensagens no Supabase em segundo plano
+        asyncio.create_task(asyncio.to_thread(save_message, user_id, 'user', user_text))
+        asyncio.create_task(asyncio.to_thread(save_message, user_id, 'model', full_text))
+        print(f"[{time.strftime('%X')}] Processamento total concluído em {time.time() - start_time:.2f}s")
     except Exception as e:
         print(f"Erro (Texto): {e}")
         await thinking_message.edit_text(f"Desculpe, ocorreu um erro com o Google Gemini: {e}")
@@ -97,13 +126,42 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file = await update.message.voice.get_file()
         await file.download_to_drive(audio_path)
         
-        audio_file = genai.upload_file(path=audio_path)
+        # Lê os bytes do arquivo para enviar diretamente (evita o genai.upload_file que está dando erro de API Key)
+        with open(audio_path, "rb") as f:
+            audio_bytes = f.read()
+            
+        audio_part = {
+            "mime_type": "audio/ogg",
+            "data": audio_bytes
+        }
         
-        response = model_gemini.generate_content(
-            ["Responda ao usuário baseado nesse áudio de forma super natural e direta, sem fazer introduções formais.", audio_file]
+        response = await model_gemini.generate_content_async(
+            ["Responda ao usuário baseado nesse áudio de forma super natural e direta, sem fazer introduções formais.", audio_part]
         )
         
-        await thinking_message.edit_text(response.text)
+        # Remove asteriscos para não afetar a fala
+        clean_text = response.text.replace('**', '').replace('*', '')
+        
+        await thinking_message.edit_text("🎤 Gravando áudio...")
+        
+        import asyncio
+        from gtts import gTTS
+        tts = gTTS(text=clean_text, lang='pt', tld='com.br')
+        tts_path = "resposta_audio.ogg"
+        await asyncio.to_thread(tts.save, tts_path)
+        
+        # Envia o áudio gravado e apaga a mensagem de status
+        await update.message.reply_voice(voice=open(tts_path, 'rb'))
+        await thinking_message.delete()
+        
+        # Salva o histórico de áudio no Supabase
+        user_id = update.message.from_user.id
+        asyncio.create_task(asyncio.to_thread(save_message, user_id, 'user', '[Áudio Recebido]'))
+        asyncio.create_task(asyncio.to_thread(save_message, user_id, 'model', clean_text))
+        
+        # Limpa o arquivo de áudio gerado
+        if os.path.exists(tts_path):
+            os.remove(tts_path)
         
     except Exception as e:
         print(f"Erro (Áudio): {e}")
@@ -129,7 +187,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         img_file = genai.upload_file(path=photo_path)
         prompt = update.message.caption or "Descreva esta imagem de forma detalhada."
-        response = model_gemini.generate_content([prompt, img_file])
+        response = await model_gemini.generate_content_async([prompt, img_file])
         
         await thinking_message.edit_text(response.text)
         
@@ -161,7 +219,8 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         API_URL = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
         headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
         
-        response = requests.post(API_URL, headers=headers, json={"inputs": prompt})
+        import asyncio
+        response = await asyncio.to_thread(requests.post, API_URL, headers=headers, json={"inputs": prompt})
         
         if response.status_code == 200:
             image_bytes = response.content
@@ -196,16 +255,16 @@ async def setup_commands(application):
     ])
 
 def main():
-    if not TELEGRAM_TOKEN or not GEMINI_API_KEY or not MONGODB_URI:
+    if not TELEGRAM_TOKEN or not GEMINI_API_KEY or not SUPABASE_URL or not SUPABASE_KEY:
         print("Erro: Tokens ausentes no .env!")
         return
 
-    # Testa a conexão com o MongoDB antes de iniciar o bot
+    # Testa a conexão com o Supabase antes de iniciar o bot
     try:
-        mongo_client.admin.command('ping')
-        print("Conexão com MongoDB Atlas estabelecida com sucesso!")
+        supabase.table("history").select("id").limit(1).execute()
+        print("Conexão com Supabase estabelecida com sucesso!")
     except Exception as e:
-        print(f"Erro ao conectar no MongoDB Atlas: {e}")
+        print(f"Erro ao conectar no Supabase: {e}")
         return
 
     # Inicia o servidor web em segundo plano para o Render não matar o bot
@@ -226,7 +285,7 @@ def main():
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    print("Super Robô Híbrido rodando com MongoDB Atlas! (Nuvem)")
+    print("Super Robô Híbrido rodando com Supabase! (Nuvem rápida)")
     app.run_polling()
 
 if __name__ == '__main__':
