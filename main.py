@@ -1,6 +1,7 @@
 import os
 import requests
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -18,10 +19,8 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Configura o Gemini
-genai.configure(api_key=GEMINI_API_KEY, transport="rest")
-model_gemini = genai.GenerativeModel('gemini-1.5-flash',
-    system_instruction="Você é a IA Alyson, uma assistente pessoal virtual amigável, prestativa e muito inteligente no Telegram. Você sabe que o seu criador, dono e alfa é o Alysontrx. Sempre que perguntarem sobre quem te criou, afirme com orgulho que foi o Alysontrx. IMPORTANTE: Não utilize formatação markdown (como asteriscos) em suas respostas."
-)
+client = genai.Client(api_key=GEMINI_API_KEY)
+system_instruction = "Você é a IA Alyson, uma assistente pessoal virtual amigável, prestativa e muito inteligente no Telegram. Você sabe que o seu criador, dono e alfa é o Alysontrx. Sempre que perguntarem sobre quem te criou, afirme com orgulho que foi o Alysontrx. IMPORTANTE: Não utilize formatação markdown (como asteriscos) em suas respostas."
 
 # ----------------- BANCO DE DADOS (Supabase) -----------------
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -34,7 +33,7 @@ def get_history(user_id, limit=200):
     history = []
     # Inverte a ordem para ficar do mais antigo para o mais novo
     for doc in reversed(docs):
-        history.append({'role': doc['role'], 'parts': [doc['text']]})
+        history.append(types.Content(role=doc['role'], parts=[types.Part.from_text(text=doc['text'])]))
     return history
 
 def save_message(user_id, role, text):
@@ -77,13 +76,29 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"[{time.strftime('%X')}] Histórico carregado em {time.time() - start_time:.2f}s")
         
         # Inicia a sessão de chat com o histórico
-        chat = model_gemini.start_chat(history=history)
+        config = types.GenerateContentConfig(system_instruction=system_instruction)
+        chat = client.aio.chats.create(model="gemini-1.5-flash", config=config, history=history)
         
         print(f"[{time.strftime('%X')}] Chamando Gemini...")
         gemini_start = time.time()
-        # Envia a mensagem e recebe a resposta de forma assíncrona (sem stream devido a restrição do REST com AQ keys)
-        response = await chat.send_message_async(user_text, stream=False)
-        full_text = response.text
+        # Envia a mensagem e recebe a resposta de forma assíncrona com stream
+        response = await chat.send_message_stream(user_text)
+        
+        full_text = ""
+        last_edit_time = 0
+        from telegram.error import BadRequest
+        
+        async for chunk in response:
+            full_text += chunk.text
+            # Atualiza a mensagem no Telegram no máximo a cada 1 segundo (evita bloqueio)
+            if time.time() - last_edit_time > 1.0:
+                clean_text = full_text.replace('**', '').replace('*', '')
+                if clean_text.strip():
+                    try:
+                        await thinking_message.edit_text(clean_text)
+                        last_edit_time = time.time()
+                    except BadRequest:
+                        pass # Ignora erro se o texto for exatamente o mesmo
         
         # Atualização final com o texto completo
         clean_text = full_text.replace('**', '').replace('*', '')
@@ -115,13 +130,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(audio_path, "rb") as f:
             audio_bytes = f.read()
             
-        audio_part = {
-            "mime_type": "audio/ogg",
-            "data": audio_bytes
-        }
+        audio_part = types.Part.from_bytes(data=audio_bytes, mime_type="audio/ogg")
         
-        response = await model_gemini.generate_content_async(
-            ["Responda ao usuário baseado nesse áudio de forma super natural e direta, sem fazer introduções formais.", audio_part]
+        response = await client.aio.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=["Responda ao usuário baseado nesse áudio de forma super natural e direta, sem fazer introduções formais.", audio_part]
         )
         
         # Remove asteriscos para não afetar a fala
@@ -170,9 +183,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file = await photo.get_file()
         await file.download_to_drive(photo_path)
         
-        img_file = genai.upload_file(path=photo_path)
+        import asyncio
+        img_file = await asyncio.to_thread(client.files.upload, file=photo_path)
         prompt = update.message.caption or "Descreva esta imagem de forma detalhada."
-        response = await model_gemini.generate_content_async([prompt, img_file])
+        response = await client.aio.models.generate_content(model="gemini-1.5-flash", contents=[prompt, img_file])
         
         await thinking_message.edit_text(response.text)
         
