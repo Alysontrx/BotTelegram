@@ -77,7 +77,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Inicia a sessão de chat com o histórico
         config = types.GenerateContentConfig(system_instruction=system_instruction)
-        chat = client.aio.chats.create(model="gemini-2.5-flash", config=config, history=history)
+        chat = client.aio.chats.create(model="gemini-3.6-flash", config=config, history=history)
         
         print(f"[{time.strftime('%X')}] Chamando Gemini...")
         gemini_start = time.time()
@@ -133,7 +133,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         audio_part = types.Part.from_bytes(data=audio_bytes, mime_type="audio/ogg")
         
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.6-flash",
             contents=["Responda ao usuário baseado nesse áudio de forma super natural e direta, sem fazer introduções formais.", audio_part]
         )
         
@@ -186,7 +186,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         import asyncio
         img_file = await asyncio.to_thread(client.files.upload, file=photo_path)
         prompt = update.message.caption or "Descreva esta imagem de forma detalhada."
-        response = await client.aio.models.generate_content(model="gemini-2.5-flash", contents=[prompt, img_file])
+        response = await client.aio.models.generate_content(model="gemini-3.6-flash", contents=[prompt, img_file])
         
         await thinking_message.edit_text(response.text)
         
