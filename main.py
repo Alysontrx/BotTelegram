@@ -81,30 +81,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         print(f"[{time.strftime('%X')}] Chamando Gemini...")
         gemini_start = time.time()
-        # Envia a mensagem e recebe a resposta de forma assíncrona com stream
-        response = await chat.send_message_async(user_text, stream=True)
-        
-        full_text = ""
-        last_edit_time = 0
-        from telegram.error import BadRequest
-        
-        async for chunk in response:
-            full_text += chunk.text
-            # Atualiza a mensagem no Telegram no máximo a cada 1 segundo (evita bloqueio)
-            if time.time() - last_edit_time > 1.0:
-                clean_text = full_text.replace('**', '').replace('*', '')
-                if clean_text.strip():
-                    try:
-                        await thinking_message.edit_text(clean_text)
-                        last_edit_time = time.time()
-                    except BadRequest:
-                        pass # Ignora erro se o texto for exatamente o mesmo
+        # Envia a mensagem e recebe a resposta de forma assíncrona (sem stream devido a restrição do REST com AQ keys)
+        response = await chat.send_message_async(user_text, stream=False)
+        full_text = response.text
         
         # Atualização final com o texto completo
         clean_text = full_text.replace('**', '').replace('*', '')
         try:
             await thinking_message.edit_text(clean_text)
-        except BadRequest:
+        except Exception as e:
             pass
             
         print(f"[{time.strftime('%X')}] Gemini terminou de responder em {time.time() - gemini_start:.2f}s")
