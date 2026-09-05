@@ -76,7 +76,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"[{time.strftime('%X')}] Histórico carregado em {time.time() - start_time:.2f}s")
         
         # Inicia a sessão de chat com o histórico
-        config = types.GenerateContentConfig(system_instruction=system_instruction)
+        google_search_tool = types.Tool(google_search=types.GoogleSearch())
+        config = types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            tools=[google_search_tool]
+        )
         chat = client.aio.chats.create(model="gemini-3.6-flash", config=config, history=history)
         
         print(f"[{time.strftime('%X')}] Chamando Gemini...")
@@ -132,9 +136,13 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         audio_part = types.Part.from_bytes(data=audio_bytes, mime_type="audio/ogg")
         
+        google_search_tool = types.Tool(google_search=types.GoogleSearch())
+        config = types.GenerateContentConfig(tools=[google_search_tool])
+        
         response = await client.aio.models.generate_content(
             model="gemini-3.6-flash",
-            contents=["Responda ao usuário baseado nesse áudio de forma super natural e direta, sem fazer introduções formais.", audio_part]
+            contents=["Responda ao usuário baseado nesse áudio de forma super natural e direta, sem fazer introduções formais.", audio_part],
+            config=config
         )
         
         # Remove asteriscos para não afetar a fala
