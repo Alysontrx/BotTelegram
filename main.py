@@ -18,7 +18,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Configura o Gemini
-genai.configure(api_key=GEMINI_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY, transport="rest")
 model_gemini = genai.GenerativeModel('gemini-1.5-flash',
     system_instruction="Você é a IA Alyson, uma assistente pessoal virtual amigável, prestativa e muito inteligente no Telegram. Você sabe que o seu criador, dono e alfa é o Alysontrx. Sempre que perguntarem sobre quem te criou, afirme com orgulho que foi o Alysontrx. IMPORTANTE: Não utilize formatação markdown (como asteriscos) em suas respostas."
 )
