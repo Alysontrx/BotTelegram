@@ -113,14 +113,22 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not clean_text.strip():
             raise Exception(f"A API retornou uma resposta vazia! Debug: {response.text[:500]}")
             
+        # Intercepta mensagens de recusa de segurança (Safety Filter)
+        refusal_phrases = ["I'm sorry, but I can't help with that", "I cannot fulfill this request", "I cannot help with that"]
+        is_refusal = any(phrase.lower() in clean_text.lower() for phrase in refusal_phrases)
+        
+        if is_refusal:
+            clean_text = "Desculpe, meu filtro de segurança interno foi ativado. Eu não tenho permissão para ajudar com esse tipo de solicitação (como hacking ou invasões)."
+            
         try:
             await thinking_message.edit_text(clean_text)
         except BadRequest:
             pass # Ignora erro se o texto for exatamente o mesmo
             
-        # Salva as duas mensagens no Supabase em segundo plano
-        asyncio.create_task(asyncio.to_thread(save_message, user_id, 'user', user_text))
-        asyncio.create_task(asyncio.to_thread(save_message, user_id, 'model', full_text))
+        # Salva as duas mensagens no Supabase apenas se NÃO for uma recusa (para não prender a IA no modo recusa)
+        if not is_refusal:
+            asyncio.create_task(asyncio.to_thread(save_message, user_id, 'user', user_text))
+            asyncio.create_task(asyncio.to_thread(save_message, user_id, 'model', full_text))
         
     except Exception as e:
         print(f"Erro (Texto): {e}")
