@@ -7,6 +7,7 @@ Funcionalidades já implementadas com sucesso:
 4. Respostas por Áudio (Voz feminina via gTTS com envio de arquivo de voz real)
 5. Memória de Longo Prazo Avançada (Leitura de até 200 mensagens antigas por vez)
 6. Acesso à Internet em tempo real (Google Search Grounding ativado no Gemini)
+7. Gerador de Imagens com IA (API 100% Gratuita e Sem Chave)
 
 Próxima Etapa Quando Você Voltar:
 -> Definir e implementar a próxima feature (aguardando instruções).
