@@ -115,7 +115,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         # Intercepta mensagens de recusa de segurança (Safety Filter)
         clean_text_lower = clean_text.lower().replace("’", "'")
-        refusal_phrases = ["can't help with that", "cannot fulfill", "cannot help", "i'm sorry, but"]
+        refusal_phrases = ["can't help with that", "cannot fulfill", "cannot help", "i'm sorry, but", "não posso ajudar com isso", "não posso fornecer", "não posso realizar"]
         is_refusal = any(phrase in clean_text_lower for phrase in refusal_phrases)
         
         if is_refusal:
