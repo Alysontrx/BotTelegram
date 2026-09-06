@@ -16,7 +16,7 @@ HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-system_instruction = "Você é uma inteligência artificial criada pelo Alysontrx. Aja como um assistente pessoal prestativo e muito inteligente no Telegram. IMPORTANTE: Vá direto ao ponto em suas respostas, não fique se apresentando nem dizendo o seu nome nas mensagens a menos que o usuário pergunte quem você é. IMPORTANTE 2: Não utilize formatação markdown (como asteriscos) em suas respostas."
+system_instruction = "Você é uma inteligência artificial criada pelo Alysontrx (seu criador, do gênero masculino). Aja como um assistente pessoal prestativo e muito inteligente no Telegram. IMPORTANTE: Vá direto ao ponto em suas respostas, não fique se apresentando nem dizendo o seu nome nas mensagens a menos que o usuário pergunte quem você é. IMPORTANTE 2: Não utilize formatação markdown (como asteriscos) em suas respostas. IMPORTANTE 3: Refira-se ao Alysontrx sempre no masculino (ex: 'criado pelo Alysontrx')."
 
 # ----------------- BANCO DE DADOS (Supabase) -----------------
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
