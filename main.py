@@ -131,30 +131,35 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👁️ A funcionalidade de visão está temporariamente em manutenção enquanto atualizamos nossa inteligência artificial para o modelo gpt-5.2!")
 
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /gerar (usando API Gratuita Pollinations)"""
+    """Comando /gerar (usando API Hugging Face via FLUX)"""
     prompt = " ".join(context.args)
     if not prompt:
         await update.message.reply_text("Por favor, diga o que você quer gerar. Exemplo:\n`/gerar um cachorro robô no espaço`", parse_mode='Markdown')
         return
         
-    thinking_message = await update.message.reply_text("🎨 Pintando a sua imagem de forma 100% gratuita... (isso pode levar alguns segundos)")
+    thinking_message = await update.message.reply_text("🎨 Pintando a sua imagem com inteligência FLUX... (isso pode levar alguns segundos)")
     try:
-        import urllib.parse
         import asyncio
         import requests
         
-        encoded_prompt = urllib.parse.quote(prompt)
-        # O Pollinations é uma API gratuita que não exige chave e usa modelos de ponta por baixo dos panos
-        API_URL = f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+        API_URL = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
         
-        response = await asyncio.to_thread(requests.get, API_URL)
+        if not HUGGINGFACE_API_KEY:
+            raise Exception("Chave HUGGINGFACE_API_KEY ausente no ambiente.")
+            
+        headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
         
-        if response.status_code == 200:
-            image_bytes = response.content
-            await update.message.reply_photo(photo=image_bytes, caption=f"🎨 {prompt}")
-            await thinking_message.delete()
-        else:
-            await thinking_message.edit_text("Desculpe, o servidor de imagens gratuito está sobrecarregado agora.")
+        def fetch_image():
+            response = requests.post(API_URL, headers=headers, json={"inputs": prompt}, timeout=60)
+            if response.status_code == 200:
+                return response.content
+            else:
+                raise Exception(f"Status {response.status_code} - {response.text}")
+                
+        image_bytes = await asyncio.to_thread(fetch_image)
+        
+        await update.message.reply_photo(photo=image_bytes, caption=f"🎨 {prompt}")
+        await thinking_message.delete()
             
     except Exception as e:
         print(f"Erro (Gerar Imagem): {e}")
