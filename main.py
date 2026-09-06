@@ -81,10 +81,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         last_edit_time = 0
         from telegram.error import BadRequest
         
-        # Faz a requisição de streaming com httpx (já incluído no python-telegram-bot)
-        async with httpx.AsyncClient() as client:
-            async with client.stream(
-                "POST", 
+        # Faz a requisição normal (sem streaming) já que a Groq é extremamente rápida
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
                 "https://api.groq.com/openai/v1/chat/completions", 
                 headers={
                     "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -93,53 +92,27 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 json={
                     "model": "qwen/qwen3.8-27b",
                     "messages": messages,
-                    "stream": True,
+                    "stream": False,
                     "temperature": 0.7,
                     "max_tokens": 1000,
-                },
-                timeout=60.0
-            ) as response:
-                
-                if response.status_code != 200:
-                    error_msg = await response.aread()
-                    raise Exception(f"Erro na API da Groq (Status {response.status_code}): {error_msg.decode('utf-8')}")
-                
-                debug_text = ""
-                async for line in response.aiter_lines():
-                    if len(debug_text) < 500:
-                        debug_text += line + "\n"
-                    if line.startswith('data: '):
-                        data_str = line[6:]
-                        if data_str.strip() == '[DONE]':
-                            break
-                        try:
-                            data = json.loads(data_str)
-                            if 'choices' in data and len(data['choices']) > 0:
-                                delta = data['choices'][0].get('delta', {})
-                                if 'content' in delta and delta['content']:
-                                    full_text += delta['content']
-                                    
-                                    # Atualiza a mensagem no Telegram no máximo a cada 1 segundo (evita bloqueio)
-                                    if time.time() - last_edit_time > 1.0:
-                                        clean_text = full_text.replace('**', '').replace('*', '')
-                                        if clean_text.strip():
-                                            try:
-                                                await thinking_message.edit_text(clean_text)
-                                                last_edit_time = time.time()
-                                            except BadRequest:
-                                                pass # Ignora erro se o texto for exatamente o mesmo
-                        except json.JSONDecodeError:
-                            pass
+                }
+            )
+            
+            if response.status_code != 200:
+                raise Exception(f"Erro na API da Groq (Status {response.status_code}): {response.text}")
+            
+            data = response.json()
+            full_text = data['choices'][0]['message']['content']
         
         # Atualização final com o texto completo
         clean_text = full_text.replace('**', '').replace('*', '')
         if not clean_text.strip():
-            raise Exception(f"A API (Groq) bloqueou a conexão ou retornou vazio! Debug: {debug_text[:300]}")
+            raise Exception(f"A API retornou uma resposta vazia! Debug: {response.text[:500]}")
             
         try:
             await thinking_message.edit_text(clean_text)
-        except Exception:
-            pass
+        except BadRequest:
+            pass # Ignora erro se o texto for exatamente o mesmo
             
         # Salva as duas mensagens no Supabase em segundo plano
         asyncio.create_task(asyncio.to_thread(save_message, user_id, 'user', user_text))
