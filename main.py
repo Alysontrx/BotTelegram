@@ -114,8 +114,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raise Exception(f"A API retornou uma resposta vazia! Debug: {response.text[:500]}")
             
         # Intercepta mensagens de recusa de segurança (Safety Filter)
-        refusal_phrases = ["I'm sorry, but I can't help with that", "I cannot fulfill this request", "I cannot help with that"]
-        is_refusal = any(phrase.lower() in clean_text.lower() for phrase in refusal_phrases)
+        clean_text_lower = clean_text.lower().replace("’", "'")
+        refusal_phrases = ["can't help with that", "cannot fulfill", "cannot help", "i'm sorry, but"]
+        is_refusal = any(phrase in clean_text_lower for phrase in refusal_phrases)
         
         if is_refusal:
             clean_text = "Desculpe, meu filtro de segurança interno foi ativado. Eu não tenho permissão para ajudar com esse tipo de solicitação (como hacking ou invasões)."
