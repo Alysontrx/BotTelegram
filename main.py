@@ -73,8 +73,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Recupera o histórico do MongoDB sem travar o loop
         history = await asyncio.to_thread(get_history, user_id)
         
+        user_name = update.message.from_user.first_name
+        
         # Constrói o array de mensagens
-        messages = [{"role": "system", "content": system_instruction}] + history
+        dynamic_system_instruction = system_instruction + f" IMPORTANTE 4: Você está conversando agora mesmo com o seu criador, {user_name}. Trate-o com respeito e sempre use pronomes masculinos (ele/dele) ao se referir a ele."
+        
+        messages = [{"role": "system", "content": dynamic_system_instruction}] + history
         messages.append({"role": "user", "content": user_text})
         
         full_text = ""
