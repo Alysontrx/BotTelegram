@@ -130,6 +130,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Atualização final com o texto completo
         clean_text = full_text.replace('**', '').replace('*', '')
+        if not clean_text.strip():
+            raise Exception("A conexão foi bloqueada pelo servidor da IA (Firewall/WAF interceptou a mensagem).")
+            
         try:
             await thinking_message.edit_text(clean_text)
         except Exception:
