@@ -104,7 +104,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     error_msg = await response.aread()
                     raise Exception(f"Erro na API da Groq (Status {response.status_code}): {error_msg.decode('utf-8')}")
                 
+                debug_text = ""
                 async for line in response.aiter_lines():
+                    if len(debug_text) < 500:
+                        debug_text += line + "\n"
                     if line.startswith('data: '):
                         data_str = line[6:]
                         if data_str.strip() == '[DONE]':
@@ -131,7 +134,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Atualização final com o texto completo
         clean_text = full_text.replace('**', '').replace('*', '')
         if not clean_text.strip():
-            raise Exception("A conexão foi bloqueada pelo servidor da IA (Firewall/WAF interceptou a mensagem).")
+            raise Exception(f"A API (Groq) bloqueou a conexão ou retornou vazio! Debug: {debug_text[:300]}")
             
         try:
             await thinking_message.edit_text(clean_text)
