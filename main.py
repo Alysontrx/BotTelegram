@@ -90,7 +90,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "qwen/qwen3.8-27b",
+                    "model": "openai/gpt-oss-20b",
                     "messages": messages,
                     "stream": False,
                     "temperature": 0.7,
