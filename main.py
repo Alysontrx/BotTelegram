@@ -76,7 +76,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_name = update.message.from_user.first_name
         
         # Constrói o array de mensagens
-        dynamic_system_instruction = system_instruction + f" IMPORTANTE 4: Você está conversando agora mesmo com o seu criador, {user_name}. Trate-o com respeito e sempre use pronomes masculinos (ele/dele) ao se referir a ele."
+        dynamic_system_instruction = system_instruction + f" IMPORTANTE 4: Você está conversando agora mesmo com o seu criador, {user_name}. Trate-o com respeito e sempre use pronomes masculinos (ele/dele) ao se referir a ele. IMPORTANTE 5: NUNCA responda em inglês. Se você não puder fazer algo, ou não tiver acesso a dados em tempo real (como cotações), explique o motivo SEMPRE em português."
         
         messages = [{"role": "system", "content": dynamic_system_instruction}] + history
         messages.append({"role": "user", "content": user_text})
