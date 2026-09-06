@@ -11,7 +11,7 @@ from supabase import create_client, Client
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-AGENTROUTER_API_KEY = os.getenv("AGENTROUTER_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -85,13 +85,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         async with httpx.AsyncClient() as client:
             async with client.stream(
                 "POST", 
-                "https://agentrouter.org/v1/chat/completions", 
+                "https://api.groq.com/openai/v1/chat/completions", 
                 headers={
-                    "Authorization": f"Bearer {AGENTROUTER_API_KEY}",
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "gpt-4o-mini",
+                    "model": "llama-3.1-70b-versatile",
                     "messages": messages,
                     "stream": True,
                     "temperature": 0.7,
@@ -102,7 +102,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 if response.status_code != 200:
                     error_msg = await response.aread()
-                    raise Exception(f"Erro na API da b.ai (Status {response.status_code}): {error_msg.decode('utf-8')}")
+                    raise Exception(f"Erro na API da Groq (Status {response.status_code}): {error_msg.decode('utf-8')}")
                 
                 async for line in response.aiter_lines():
                     if line.startswith('data: '):
