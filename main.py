@@ -91,7 +91,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "llama-3.1-70b-versatile",
+                    "model": "qwen/qwen3.8-27b",
                     "messages": messages,
                     "stream": True,
                     "temperature": 0.7,
