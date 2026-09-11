@@ -5,4 +5,4 @@ httpx
 supabase==2.31.0
 Flask
 gTTS
-duckduckgo-search
+ddgs

@@ -96,10 +96,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     answer = check_response.json()['choices'][0]['message']['content'].strip().upper()
                     if "SIM" in answer:
                         await thinking_message.edit_text("Pesquisando na web... 🌐")
-                        from duckduckgo_search import DDGS
+                        from ddgs import DDGS
                         results = await asyncio.to_thread(lambda: DDGS().text(user_text, max_results=4))
                         if results:
-                            search_context = "\n\nRESULTADOS DA BUSCA NA WEB (Use isso para responder o usuário):\n" + "\n".join([f"- {r['title']}: {r['body']}" for r in results])
+                            search_context = "\n\nINFORMAÇÕES EM TEMPO REAL DA BUSCA NA WEB:\n" + "\n".join([f"- {r['title']}: {r['body']}" for r in results]) + "\n(ATENÇÃO: VOCÊ TEM ACESSO A ESTES DADOS. USE-OS PARA RESPONDER O USUÁRIO E NUNCA DIGA QUE NÃO TEM ACESSO À INTERNET)."
         except Exception as e:
             print(f"Erro na etapa de busca web: {e}")
         # --------------------------------------------------------
@@ -108,6 +108,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dynamic_system_instruction = system_instruction + f" IMPORTANTE 4: Você está conversando agora mesmo com o seu criador, {user_name}. Trate-o com respeito e sempre use pronomes masculinos (ele/dele) ao se referir a ele. IMPORTANTE 5: NUNCA responda em inglês."
         if search_context:
             dynamic_system_instruction += search_context
+        else:
+            dynamic_system_instruction += " Se você não tiver acesso a dados em tempo real, explique o motivo."
         
         messages = [{"role": "system", "content": dynamic_system_instruction}] + history
         messages.append({"role": "user", "content": user_text})
