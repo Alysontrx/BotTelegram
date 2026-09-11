@@ -75,8 +75,39 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         user_name = update.message.from_user.first_name
         
+        # --- VERIFICAÇÃO DE BUSCA NA WEB (PRE-FLIGHT CHECK) ---
+        search_context = ""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                check_response = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+                    json={
+                        "model": "llama3-8b-8192", # Modelo menor e mais rápido para checagem
+                        "messages": [
+                            {"role": "system", "content": "Você é um classificador. Responda APENAS com 'SIM' ou 'NAO' (sem aspas). A pergunta do usuário a seguir requer pesquisa na internet para obter informações atuais, notícias de hoje, clima, ou fatos recentes?"},
+                            {"role": "user", "content": user_text}
+                        ],
+                        "temperature": 0.0,
+                        "max_tokens": 10
+                    }
+                )
+                if check_response.status_code == 200:
+                    answer = check_response.json()['choices'][0]['message']['content'].strip().upper()
+                    if "SIM" in answer:
+                        await thinking_message.edit_text("Pesquisando na web... 🌐")
+                        from duckduckgo_search import DDGS
+                        results = await asyncio.to_thread(lambda: DDGS().text(user_text, max_results=4))
+                        if results:
+                            search_context = "\n\nRESULTADOS DA BUSCA NA WEB (Use isso para responder o usuário):\n" + "\n".join([f"- {r['title']}: {r['body']}" for r in results])
+        except Exception as e:
+            print(f"Erro na etapa de busca web: {e}")
+        # --------------------------------------------------------
+        
         # Constrói o array de mensagens
-        dynamic_system_instruction = system_instruction + f" IMPORTANTE 4: Você está conversando agora mesmo com o seu criador, {user_name}. Trate-o com respeito e sempre use pronomes masculinos (ele/dele) ao se referir a ele. IMPORTANTE 5: NUNCA responda em inglês. Se você não puder fazer algo, ou não tiver acesso a dados em tempo real (como cotações), explique o motivo SEMPRE em português."
+        dynamic_system_instruction = system_instruction + f" IMPORTANTE 4: Você está conversando agora mesmo com o seu criador, {user_name}. Trate-o com respeito e sempre use pronomes masculinos (ele/dele) ao se referir a ele. IMPORTANTE 5: NUNCA responda em inglês."
+        if search_context:
+            dynamic_system_instruction += search_context
         
         messages = [{"role": "system", "content": dynamic_system_instruction}] + history
         messages.append({"role": "user", "content": user_text})
@@ -85,33 +116,55 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         last_edit_time = 0
         from telegram.error import BadRequest
         
-        # Faz a requisição normal (sem streaming) já que a Groq é extremamente rápida
+        # Faz a requisição com Streaming verdadeiro
         async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
+            async with client.stream(
+                "POST",
                 "https://api.groq.com/openai/v1/chat/completions", 
                 headers={
                     "Authorization": f"Bearer {GROQ_API_KEY}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "openai/gpt-oss-20b",
+                    "model": "llama3-70b-8192",
                     "messages": messages,
-                    "stream": False,
+                    "stream": True,
                     "temperature": 0.7,
                     "max_tokens": 1000,
                 }
-            )
+            ) as response:
             
-            if response.status_code != 200:
-                raise Exception(f"Erro na API da Groq (Status {response.status_code}): {response.text}")
-            
-            data = response.json()
-            full_text = data['choices'][0]['message']['content']
+                if response.status_code != 200:
+                    error_text = await response.aread()
+                    raise Exception(f"Erro na API da Groq (Status {response.status_code}): {error_text.decode('utf-8', errors='ignore')}")
+                
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        line_data = line[6:]
+                        if line_data == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(line_data)
+                            delta = chunk['choices'][0]['delta'].get('content', '')
+                            if delta:
+                                full_text += delta
+                                clean_text = full_text.replace('**', '').replace('*', '')
+                                
+                                # Atualiza o telegram a cada 1.5 segundos para evitar limitação (FloodWait)
+                                current_time = time.time()
+                                if current_time - last_edit_time > 1.5 and clean_text.strip():
+                                    try:
+                                        await thinking_message.edit_text(clean_text)
+                                        last_edit_time = current_time
+                                    except BadRequest:
+                                        pass
+                        except json.JSONDecodeError:
+                            continue
         
         # Atualização final com o texto completo
         clean_text = full_text.replace('**', '').replace('*', '')
         if not clean_text.strip():
-            raise Exception(f"A API retornou uma resposta vazia! Debug: {response.text[:500]}")
+            raise Exception(f"A API retornou uma resposta vazia!")
             
         # Intercepta mensagens de recusa de segurança (Safety Filter)
         clean_text_lower = clean_text.lower().replace("’", "'")
@@ -136,12 +189,155 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await thinking_message.edit_text(f"Desculpe, ocorreu um erro com a nova inteligência artificial: {e}")
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processa áudios (Voice) recebidos"""
-    await update.message.reply_text("🎧 A funcionalidade de áudio está temporariamente em manutenção enquanto atualizamos nossa inteligência artificial para o modelo gpt-5.2!")
+    """Processa áudios (Voice) recebidos usando Whisper da Groq e responde com Voz (gTTS)"""
+    user_id = update.message.from_user.id
+    user_name = update.message.from_user.first_name
+    
+    thinking_message = await update.message.reply_text("Ouvi seu áudio, estou processando... 🎧")
+    try:
+        import asyncio
+        import httpx
+        import json
+        import io
+        from gtts import gTTS
+        
+        # 1. Baixar o arquivo de voz do Telegram
+        voice_file = await context.bot.get_file(update.message.voice.file_id)
+        file_bytes = await voice_file.download_as_bytearray()
+        
+        # 2. Transcrever usando Groq (whisper-large-v3)
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            whisper_response = await client.post(
+                "https://api.groq.com/openai/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+                files={"file": ("audio.ogg", file_bytes, "audio/ogg")},
+                data={"model": "whisper-large-v3", "language": "pt", "response_format": "json"}
+            )
+            
+            if whisper_response.status_code != 200:
+                raise Exception(f"Erro no Whisper: {whisper_response.text}")
+                
+            user_text = whisper_response.json().get('text', '')
+            if not user_text:
+                raise Exception("Não consegui entender o que foi dito no áudio.")
+                
+        await thinking_message.edit_text(f"🗣️ Você disse: _{user_text}_\n\nEstou pensando na resposta...", parse_mode="Markdown")
+        
+        # 3. Pegar o histórico e gerar a resposta (Sem streaming, pois precisamos do texto completo para gerar áudio)
+        history = await asyncio.to_thread(get_history, user_id)
+        dynamic_system_instruction = system_instruction + f" IMPORTANTE 4: Você está conversando agora mesmo com o seu criador, {user_name}. Trate-o com respeito e sempre use pronomes masculinos (ele/dele) ao se referir a ele. IMPORTANTE 5: NUNCA responda em inglês. Suas mensagens serão lidas em voz alta, então evite usar emojis, formatações complexas ou textos muito longos."
+        
+        messages = [{"role": "system", "content": dynamic_system_instruction}] + history
+        messages.append({"role": "user", "content": user_text})
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            chat_response = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "llama3-70b-8192",
+                    "messages": messages,
+                    "stream": False,
+                    "temperature": 0.7,
+                    "max_tokens": 500,
+                }
+            )
+            
+            if chat_response.status_code != 200:
+                raise Exception(f"Erro no Chat: {chat_response.text}")
+                
+            full_text = chat_response.json()['choices'][0]['message']['content']
+            clean_text = full_text.replace('**', '').replace('*', '')
+            
+        await thinking_message.edit_text(f"🗣️ Você disse: _{user_text}_\n\nGravando áudio de resposta... 🎙️", parse_mode="Markdown")
+        
+        # 4. Gerar o áudio usando gTTS (Google Text-to-Speech)
+        def generate_audio():
+            tts = gTTS(text=clean_text, lang='pt', tld='com.br') # Português do Brasil
+            fp = io.BytesIO()
+            tts.write_to_fp(fp)
+            fp.seek(0)
+            return fp
+            
+        audio_fp = await asyncio.to_thread(generate_audio)
+        
+        # 5. Enviar o áudio e a transcrição para o usuário
+        await update.message.reply_voice(voice=audio_fp, caption="Aqui está minha resposta por voz!")
+        await thinking_message.delete()
+        
+        # 6. Salvar na memória
+        asyncio.create_task(asyncio.to_thread(save_message, user_id, 'user', user_text))
+        asyncio.create_task(asyncio.to_thread(save_message, user_id, 'model', full_text))
+        
+    except Exception as e:
+        print(f"Erro (Voice): {e}")
+        await thinking_message.edit_text(f"Desculpe, ocorreu um erro ao processar o áudio: {e}")
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processa fotos recebidas"""
-    await update.message.reply_text("👁️ A funcionalidade de visão está temporariamente em manutenção enquanto atualizamos nossa inteligência artificial para o modelo gpt-5.2!")
+    """Processa fotos recebidas usando Groq Vision (llama-3.2-11b-vision-preview)"""
+    user_id = update.message.from_user.id
+    caption = update.message.caption or "Por favor, descreva o que há nesta imagem em detalhes."
+    
+    thinking_message = await update.message.reply_text("👁️ Analisando sua imagem...")
+    try:
+        import asyncio
+        import httpx
+        import base64
+        
+        # 1. Obter a foto de maior resolução
+        photo_file = await context.bot.get_file(update.message.photo[-1].file_id)
+        file_bytes = await photo_file.download_as_bytearray()
+        
+        # 2. Converter para base64
+        base64_image = base64.b64encode(file_bytes).decode('utf-8')
+        
+        # 3. Enviar para a API da Groq
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            vision_response = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "llama-3.2-11b-vision-preview",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": caption},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{base64_image}"
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    "temperature": 0.7,
+                    "max_tokens": 800,
+                }
+            )
+            
+            if vision_response.status_code != 200:
+                raise Exception(f"Erro no Groq Vision: {vision_response.text}")
+                
+            full_text = vision_response.json()['choices'][0]['message']['content']
+            clean_text = full_text.replace('**', '').replace('*', '')
+            
+        await thinking_message.edit_text(clean_text)
+        
+        # 4. Salvar na memória (Apenas o texto, já que a imagem em base64 é muito grande)
+        asyncio.create_task(asyncio.to_thread(save_message, user_id, 'user', f"[Enviou uma imagem com a legenda: '{caption}']"))
+        asyncio.create_task(asyncio.to_thread(save_message, user_id, 'model', full_text))
+        
+    except Exception as e:
+        print(f"Erro (Photo): {e}")
+        await thinking_message.edit_text(f"Desculpe, ocorreu um erro ao analisar a imagem: {e}")
 
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /gerar (usando API Hugging Face via FLUX)"""
