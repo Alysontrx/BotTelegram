@@ -83,7 +83,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "https://api.groq.com/openai/v1/chat/completions",
                     headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
                     json={
-                        "model": "llama-3.1-8b-instant", # Modelo menor e mais rápido para checagem
+                        "model": "openai/gpt-oss-20b", # Modelo compatível com sua chave
                         "messages": [
                             {"role": "system", "content": "Você é um classificador. Responda APENAS com 'SIM' ou 'NAO' (sem aspas). A pergunta do usuário a seguir requer pesquisa na internet para obter informações atuais, notícias de hoje, clima, ou fatos recentes?"},
                             {"role": "user", "content": user_text}
@@ -126,7 +126,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "llama-3.1-70b-versatile",
+                    "model": "openai/gpt-oss-20b",
                     "messages": messages,
                     "stream": True,
                     "temperature": 0.7,
@@ -238,7 +238,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "llama-3.1-70b-versatile",
+                    "model": "openai/gpt-oss-20b",
                     "messages": messages,
                     "stream": False,
                     "temperature": 0.7,
